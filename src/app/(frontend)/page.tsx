@@ -1,152 +1,39 @@
-import { headers } from 'next/headers'
-import { getPayloadClient } from '@/lib/payload'
-import { CommandCenter, type DashboardData } from '@/components/command-center'
+import { redirect } from 'next/navigation'
+import { getSession } from '@/lib/session'
 
-const emptyData: DashboardData = {
-  authenticated: false,
-  metrics: {
-    producers: 0,
-    retailers: 0,
-    verifiedPartners: 0,
-    pendingVerifications: 0,
-    products: 0,
-    activeProducts: 0,
-    orders: 0,
-    pendingOrders: 0,
-    completedOrders: 0,
-    transactionValue: 0,
-    openDisputes: 0,
-  },
-  orders: [],
-}
-
-const relationName = (value: unknown) => {
-  if (value && typeof value === 'object' && 'name' in value && typeof value.name === 'string') {
-    return value.name
-  }
-  return 'Organization'
-}
+export const dynamic = 'force-dynamic'
 
 export default async function HomePage() {
-  const payload = await getPayloadClient()
-  const requestHeaders = await headers()
-  const { user } = await payload.auth({ headers: requestHeaders })
-
-  if (!user || user.collection !== 'admins') {
-    return <CommandCenter data={emptyData} />
+  const session = await getSession()
+  if (!session) {
+    return (
+      <main className="flex min-h-screen flex-col items-center justify-center bg-zinc-50 px-4">
+        <p className="text-3xl font-black tracking-tight text-zinc-900">
+          NEXUS<span className="text-blue-700">ONE</span>
+        </p>
+        <p className="mt-2 max-w-md text-center text-sm text-zinc-500">
+          The B2B marketplace connecting verified producers with shop owners. Sign in or register
+          your business to get started.
+        </p>
+        <div className="mt-6 flex gap-3">
+          <a
+            className="rounded-lg bg-blue-700 px-5 py-2.5 text-sm font-semibold text-white hover:bg-blue-800"
+            href="/login"
+          >
+            Sign in
+          </a>
+          <a
+            className="rounded-lg border border-zinc-300 bg-white px-5 py-2.5 text-sm font-semibold text-zinc-700 hover:bg-zinc-100"
+            href="/register"
+          >
+            Register
+          </a>
+        </div>
+      </main>
+    )
   }
 
-  const [
-    producers,
-    retailers,
-    verifiedPartners,
-    pendingVerifications,
-    products,
-    activeProducts,
-    orders,
-    pendingOrders,
-    completedOrders,
-    openDisputes,
-    orderValues,
-    recentOrders,
-  ] = await Promise.all([
-    payload.count({
-      collection: 'organizations',
-      where: { type: { equals: 'producer' } },
-      overrideAccess: false,
-      user,
-    }),
-    payload.count({
-      collection: 'organizations',
-      where: { type: { equals: 'retailer' } },
-      overrideAccess: false,
-      user,
-    }),
-    payload.count({
-      collection: 'organizations',
-      where: { verificationStatus: { equals: 'verified' } },
-      overrideAccess: false,
-      user,
-    }),
-    payload.count({
-      collection: 'organizations',
-      where: { verificationStatus: { in: ['pending', 'in-review'] } },
-      overrideAccess: false,
-      user,
-    }),
-    payload.count({ collection: 'products', overrideAccess: false, user }),
-    payload.count({
-      collection: 'products',
-      where: { and: [{ approvalStatus: { equals: 'approved' } }, { active: { equals: true } }] },
-      overrideAccess: false,
-      user,
-    }),
-    payload.count({ collection: 'orders', overrideAccess: false, user }),
-    payload.count({
-      collection: 'orders',
-      where: {
-        status: {
-          in: ['pending', 'quotation', 'confirmed', 'preparing', 'dispatched', 'in-transit'],
-        },
-      },
-      overrideAccess: false,
-      user,
-    }),
-    payload.count({
-      collection: 'orders',
-      where: { status: { in: ['delivered', 'completed'] } },
-      overrideAccess: false,
-      user,
-    }),
-    payload.count({
-      collection: 'disputes',
-      where: { status: { in: ['open', 'investigating', 'awaiting-response'] } },
-      overrideAccess: false,
-      user,
-    }),
-    payload.find({
-      collection: 'orders',
-      limit: 500,
-      depth: 0,
-      select: { total: true },
-      overrideAccess: false,
-      user,
-    }),
-    payload.find({
-      collection: 'orders',
-      limit: 8,
-      depth: 1,
-      sort: '-createdAt',
-      overrideAccess: false,
-      user,
-    }),
-  ])
-
-  const data: DashboardData = {
-    authenticated: true,
-    metrics: {
-      producers: producers.totalDocs,
-      retailers: retailers.totalDocs,
-      verifiedPartners: verifiedPartners.totalDocs,
-      pendingVerifications: pendingVerifications.totalDocs,
-      products: products.totalDocs,
-      activeProducts: activeProducts.totalDocs,
-      orders: orders.totalDocs,
-      pendingOrders: pendingOrders.totalDocs,
-      completedOrders: completedOrders.totalDocs,
-      transactionValue: orderValues.docs.reduce((total, order) => total + (order.total ?? 0), 0),
-      openDisputes: openDisputes.totalDocs,
-    },
-    orders: recentOrders.docs.map((order) => ({
-      id: String(order.id),
-      orderNumber: order.orderNumber,
-      buyer: relationName(order.buyerOrganization),
-      producer: relationName(order.producerOrganization),
-      status: order.status,
-      total: order.total,
-      createdAt: order.createdAt,
-    })),
-  }
-
-  return <CommandCenter data={data} />
+  if (session.user.role === 'producer') redirect('/producer')
+  if (session.user.role === 'retailer') redirect('/retailer')
+  redirect('/admin')
 }
